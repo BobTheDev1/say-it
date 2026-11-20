@@ -119,6 +119,7 @@
     #result-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .875rem; line-height: 1.35; }
     #outcome { display: block; margin-top: 5px; }
     #outcome[data-pass="true"] { color: var(--green); }
+    .different-letter { color: #a74600; font-weight: 750; }
     #copy {
       min-height: 44px;
       margin-top: 6px;
@@ -169,19 +170,20 @@
   <script>
     const LANG = "ja-JP";
     const WORDS = [
-      {"word":"こんにちは","romaji":"Konnichiwa","reading":"konichiwa","meaning":"Hello"},
-      {"word":"ありがとう","romaji":"Arigatou","meaning":"Thank you"},
+      {"word":"こんにちは","romaji":"Konnichiwa","reading":"konichiwa","meaning":"Hello","accepted":["今日は"]},
+      {"word":"ありがとう","romaji":"Arigatou","meaning":"Thank you","accepted":["有難う","有り難う"]},
       {"word":"はい","romaji":"Hai","meaning":"Yes"},
       {"word":"いいえ","romaji":"Iie","meaning":"No"},
-      {"word":"おはよう","romaji":"Ohayou","meaning":"Good morning"},
-      {"word":"こんばんは","romaji":"Konbanwa","meaning":"Good evening"},
-      {"word":"すみません","romaji":"Sumimasen","meaning":"Excuse me / Sorry"},
-      {"word":"ごめんなさい","romaji":"Gomen nasai","meaning":"I'm sorry"},
-      {"word":"さようなら","romaji":"Sayounara","meaning":"Goodbye"},
-      {"word":"ともだち","romaji":"Tomodachi","meaning":"Friend"}
+      {"word":"おはよう","romaji":"Ohayou","meaning":"Good morning","accepted":["お早う"]},
+      {"word":"こんばんは","romaji":"Konbanwa","meaning":"Good evening","accepted":["今晩は"]},
+      {"word":"すみません","romaji":"Sumimasen","meaning":"Excuse me / Sorry","accepted":["済みません"]},
+      {"word":"ごめんなさい","romaji":"Gomen nasai","meaning":"I'm sorry","accepted":["御免なさい"]},
+      {"word":"さようなら","romaji":"Sayounara","meaning":"Goodbye","accepted":["左様なら"]},
+      {"word":"ともだち","romaji":"Tomodachi","meaning":"Friend","accepted":["友達"]}
     ];
 
-    const passRule = "after a reload the result card shows this word's best % and a deck line like \"PASS on 3 of 10\"; PASS when 5 of 10 words are 80 % or more.";
+    const passMatch = 90;
+    const passRule = "the word gets PASS at " + passMatch + "% match or more.";
     const scoreKey = "say-it-scores";
     const next = document.querySelector("#next");
     const saved = readDeck();
@@ -250,22 +252,61 @@
       document.querySelector("#reading").textContent = "(" + (reading ?? romaji.toLowerCase()) + ")";
     }
 
-    function matchPercent(transcript, word) {
-      const normalize = text => Array.from(text.normalize("NFKC").toLowerCase()
+    function normalizeLetters(text) {
+      return Array.from(text.normalize("NFKC").toLowerCase()
         .replace(/[ァ-ヶ]/g, letter => String.fromCharCode(letter.charCodeAt(0) - 0x60))
         .replace(/[^\p{L}\p{N}\p{M}]/gu, ""));
-      const heardLetters = normalize(transcript);
-      const wordLetters = normalize(word);
-      let previous = Array.from({ length: wordLetters.length + 1 }, (_, index) => index);
+    }
+
+    function compareLetters(transcript, word) {
+      const heardLetters = normalizeLetters(transcript);
+      const wordLetters = normalizeLetters(word);
+      const distances = [Array.from({ length: wordLetters.length + 1 }, (_, index) => index)];
       for (const [index, letter] of heardLetters.entries()) {
+        const previous = distances[index];
         const current = [index + 1];
         for (const [column, expected] of wordLetters.entries()) {
           current.push(Math.min(current[column] + 1, previous[column + 1] + 1,
             previous[column] + Number(letter !== expected)));
         }
-        previous = current;
+        distances.push(current);
       }
-      return Math.round(100 * (1 - previous[wordLetters.length] / Math.max(heardLetters.length, wordLetters.length)));
+      return { heardLetters, wordLetters, distances };
+    }
+
+    function matchPercent(transcript, word) {
+      const { heardLetters, wordLetters, distances } = compareLetters(transcript, word);
+      const distance = distances[heardLetters.length][wordLetters.length];
+      return Math.round(100 * (1 - distance / Math.max(heardLetters.length, wordLetters.length)));
+    }
+
+    function highlightWord(word) {
+      const { heardLetters, wordLetters, distances } = compareLetters(heard, word);
+      const different = new Set();
+      let row = heardLetters.length;
+      let column = wordLetters.length;
+
+      while (column > 0) {
+        const distance = distances[row][column];
+        const same = row > 0 && heardLetters[row - 1] === wordLetters[column - 1];
+        if (row > 0 && distance === distances[row - 1][column - 1] + Number(!same)) {
+          if (!same) different.add(column - 1);
+          row--;
+          column--;
+        } else if (distance === distances[row][column - 1] + 1) {
+          different.add(--column);
+        } else {
+          row--;
+        }
+      }
+
+      return Array.from(word, (letter, index) => {
+        if (!different.has(index)) return letter;
+        const highlight = document.createElement("span");
+        highlight.className = "different-letter";
+        highlight.textContent = letter;
+        return highlight;
+      });
     }
 
     next.addEventListener("click", () => {
@@ -283,20 +324,22 @@
 
     function renderResult() {
       const word = deck[wordIndex].word;
-      const deckPasses = WORDS.filter(item => scores[item.word] >= 80).length;
       const lines = [
-        "RESULT CARD · Goal 4 · MY DECK",
+        "RESULT CARD · Goal 3 · SCORE",
         "word: " + word,
         "I heard: " + (heard || "—"),
-        "match: " + (match === undefined ? "—" : match + "%"),
-        "best: " + (scores[word] === undefined ? "—" : scores[word] + "%"),
-        "deck: PASS on " + deckPasses + " of " + WORDS.length
+        "match: " + (match === undefined ? "—" : match + "%")
       ];
       const blocked = saveProblem || listenProblem || problem;
       if (blocked) lines.push("problem: " + blocked);
       lines.push("PASS rule: " + passRule);
-      details.textContent = lines.join("\n");
-      const passed = deckPasses >= 5 && !saveProblem;
+      if (heard && match < 100) {
+        details.replaceChildren(lines[0] + "\nword: ", ...highlightWord(word),
+          "\n" + lines.slice(2).join("\n"));
+      } else {
+        details.textContent = lines.join("\n");
+      }
+      const passed = match >= passMatch;
       outcome.textContent = passed ? "→ PASS" : "→ NOT YET";
       outcome.dataset.pass = passed;
     }
@@ -438,8 +481,8 @@
         const result = alternatives[0];
         const transcript = result.transcript.trim();
         if (transcript && performance.now() <= deadline) {
-          const { word, romaji } = deck[wordIndex];
-          match = Math.max(matchPercent(transcript, word), matchPercent(transcript, romaji));
+          const { word, romaji, accepted = [] } = deck[wordIndex];
+          match = Math.max(...[word, romaji, ...accepted].map(spelling => matchPercent(transcript, spelling)));
           scores[word] = Math.max(scores[word] ?? 0, match);
           saveDeck();
           finish("", transcript);
