@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Say It</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --indigo: #182b55;
+      --red: #b71643;
+      --pink: #ff9cb4;
+      --paper: #fffafb;
+      --lavender: #eee8f6;
+      --green: #176044;
+      font-family: system-ui, sans-serif;
+      color: var(--indigo);
+      background: var(--lavender);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    .app {
+      width: min(100%, 430px);
+      margin: auto;
+      background: var(--paper);
+      min-height: 100svh;
+    }
+
+    header {
+      padding: 12px 20px;
+      background: var(--indigo);
+      color: white;
+    }
+
+    h1 { margin: 0; font-size: 1.25rem; }
+    main { padding: 14px 16px 16px; }
+
+    #position { margin: 0 0 6px; font-size: .875rem; font-weight: 650; }
+    #reading { margin: 2px 0 0; }
+
+    .word-card {
+      display: grid;
+      place-content: center;
+      text-align: center;
+      min-height: clamp(96px, 19svh, 160px);
+      padding: 12px;
+      border-radius: 18px;
+      background: radial-gradient(circle at 88% 105%, var(--pink) 0 52px, transparent 53px), var(--red);
+      color: white;
+    }
+
+    h2 { margin: 0; font-size: clamp(2rem, 9vw, 2.75rem); }
+    button { font: inherit; cursor: pointer; }
+    button:focus-visible { outline: 3px solid var(--indigo); outline-offset: 4px; }
+
+    .voice-picker {
+      display: grid;
+      gap: 4px;
+      margin-top: 10px;
+      font-size: .875rem;
+      font-weight: 650;
+    }
+
+    .voice-picker select {
+      width: 100%;
+      min-height: 44px;
+      padding: 0 10px;
+      border: 1px solid #d9cfea;
+      border-radius: 8px;
+      background: white;
+      color: inherit;
+      font: inherit;
+    }
+
+    .voice-picker select:focus-visible {
+      outline: 3px solid var(--indigo);
+      outline-offset: 2px;
+    }
+
+    .speech-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin: 12px 0 0;
+    }
+
+    .speech-buttons button {
+      display: grid;
+      place-content: center;
+      gap: 2px;
+      width: 76px;
+      height: 76px;
+      border: 0;
+      border-radius: 50%;
+      background: var(--indigo);
+      color: white;
+      font-weight: 700;
+    }
+
+    .speech-buttons #next { border-radius: 12px; }
+    .speech-buttons #listen { border-radius: 12px; background: var(--red); }
+    .speech-buttons span { font-size: 1.35rem; }
+    .speech-buttons button:disabled { opacity: .7; cursor: wait; }
+    #listen-status {
+      min-height: 1.125rem;
+      margin: 0 0 4px;
+      text-align: center;
+      font-size: .875rem;
+      line-height: 1.125rem;
+    }
+    .result {
+      padding: 12px;
+      border: 1px solid #d9cfea;
+      border-radius: 12px;
+      background: white;
+    }
+
+    #result-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .875rem; line-height: 1.35; }
+    #outcome { display: block; margin-top: 5px; }
+    #outcome[data-pass="true"] { color: var(--green); }
+    #copy {
+      min-height: 44px;
+      margin-top: 6px;
+      padding: 0 12px;
+      border: 1px solid #d9cfea;
+      border-radius: 8px;
+      background: var(--lavender);
+      color: inherit;
+      font-weight: 650;
+    }
+
+    #copy-status { margin-left: 6px; font-size: .875rem; }
+
+    @media (min-width: 480px) {
+      body { padding: 24px 0; }
+      .app {
+        min-height: auto;
+        border-radius: 24px;
+        overflow: hidden;
+        box-shadow: 0 16px 48px #182b5526;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header><h1>Say It</h1></header>
+    <main>
+      <p id="position"></p>
+      <div class="word-card" aria-live="polite"><h2 id="word" lang="ja"></h2><p id="reading"></p></div>
+      <label class="voice-picker">
+        Japanese voice
+        <select id="voice"></select>
+      </label>
+      <div class="speech-buttons">
+        <button id="say" type="button"><span aria-hidden="true">🔊</span>Say it</button>
+        <button id="listen" type="button"><span aria-hidden="true">🎤</span>Listen</button>
+        <button id="slow" type="button"><span aria-hidden="true">🐢</span>Slow</button>
+        <button id="next" type="button">Next</button>
+      </div>
+      <p id="listen-status" role="status"></p>
+      <section class="result" aria-label="Result card">
+        <p id="result-text" aria-live="polite"><span id="details"></span><strong id="outcome"></strong></p>
+        <button id="copy" type="button">Copy result</button><span id="copy-status" role="status"></span>
+      </section>
+    </main>
+  </div>
+  <script>
+    const LANG = "ja-JP";
+    const WORDS = [
+      {"word":"こんにちは","romaji":"Konnichiwa","reading":"konichiwa","meaning":"Hello"},
+      {"word":"ありがとう","romaji":"Arigatou","meaning":"Thank you"},
+      {"word":"はい","romaji":"Hai","meaning":"Yes"},
+      {"word":"いいえ","romaji":"Iie","meaning":"No"},
+      {"word":"おはよう","romaji":"Ohayou","meaning":"Good morning"},
+      {"word":"こんばんは","romaji":"Konbanwa","meaning":"Good evening"},
+      {"word":"すみません","romaji":"Sumimasen","meaning":"Excuse me / Sorry"},
+      {"word":"ごめんなさい","romaji":"Gomen nasai","meaning":"I'm sorry"},
+      {"word":"さようなら","romaji":"Sayounara","meaning":"Goodbye"},
+      {"word":"ともだち","romaji":"Tomodachi","meaning":"Friend"}
+    ];
+
+    const passRule = "after a reload the result card shows this word's best % and a deck line like \"PASS on 3 of 10\"; PASS when 5 of 10 words are 80 % or more.";
+    const scoreKey = "say-it-scores";
+    const next = document.querySelector("#next");
+    const saved = readDeck();
+    const scores = saved.scores;
+    let deck = practiceOrder();
+    let wordIndex = 0;
+    let match;
+    let saveProblem = "";
+    const speech = window.speechSynthesis;
+    const say = document.querySelector("#say");
+    const slow = document.querySelector("#slow");
+    const voicePicker = document.querySelector("#voice");
+    const listen = document.querySelector("#listen");
+    const listenStatus = document.querySelector("#listen-status");
+    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    const nothingHeard = "I heard nothing — click 🎤 and say the word once, clearly";
+    const details = document.querySelector("#details");
+    const outcome = document.querySelector("#outcome");
+    const copyStatus = document.querySelector("#copy-status");
+    let voices = [];
+    let selectedVoice;
+    let problem = "";
+    let heard = "";
+    let listenProblem = "";
+    let waitingForVoices = false;
+    let voiceTimer;
+    let utterance;
+    let requestedSpeed;
+
+    function readDeck() {
+      try {
+        const stored = JSON.parse(localStorage.getItem(scoreKey)) ?? {};
+        const scores = Object.fromEntries(WORDS.flatMap(({ word }) => {
+          const score = (stored.scores ?? stored)[word];
+          return Number.isFinite(score) && score >= 0 && score <= 100 ? [[word, score]] : [];
+        }));
+        return { scores };
+      } catch {
+        return { scores: {} };
+      }
+    }
+
+    function saveDeck() {
+      const latest = readDeck().scores;
+      for (const { word } of WORDS) {
+        if (latest[word] !== undefined) scores[word] = Math.max(scores[word] ?? 0, latest[word]);
+      }
+      try {
+        localStorage.setItem(scoreKey, JSON.stringify({ scores }));
+        saveProblem = "";
+      } catch {
+        saveProblem = "this browser could not keep your scores after a reload";
+      }
+    }
+
+    function practiceOrder() {
+      return [...WORDS].sort((first, second) =>
+        (scores[first.word] ?? 101) - (scores[second.word] ?? 101)
+      );
+    }
+
+    function showWord() {
+      const { word, romaji, reading } = deck[wordIndex];
+      document.querySelector("#position").textContent = "word " + (wordIndex + 1) + " of " + WORDS.length;
+      document.querySelector("#word").textContent = word;
+      document.querySelector("#reading").textContent = "(" + (reading ?? romaji.toLowerCase()) + ")";
+    }
+
+    function matchPercent(transcript, word) {
+      const normalize = text => Array.from(text.normalize("NFKC").toLowerCase()
+        .replace(/[ァ-ヶ]/g, letter => String.fromCharCode(letter.charCodeAt(0) - 0x60))
+        .replace(/[^\p{L}\p{N}\p{M}]/gu, ""));
+      const heardLetters = normalize(transcript);
+      const wordLetters = normalize(word);
+      let previous = Array.from({ length: wordLetters.length + 1 }, (_, index) => index);
+      for (const [index, letter] of heardLetters.entries()) {
+        const current = [index + 1];
+        for (const [column, expected] of wordLetters.entries()) {
+          current.push(Math.min(current[column] + 1, previous[column + 1] + 1,
+            previous[column] + Number(letter !== expected)));
+        }
+        previous = current;
+      }
+      return Math.round(100 * (1 - previous[wordLetters.length] / Math.max(heardLetters.length, wordLetters.length)));
+    }
+
+    next.addEventListener("click", () => {
+      wordIndex = (wordIndex + 1) % deck.length;
+      heard = "";
+      match = undefined;
+      listenProblem = "";
+      problem = "";
+      copyStatus.textContent = "";
+      saveDeck();
+      if (wordIndex === 0) deck = practiceOrder();
+      showWord();
+      renderResult();
+    });
+
+    function renderResult() {
+      const word = deck[wordIndex].word;
+      const deckPasses = WORDS.filter(item => scores[item.word] >= 80).length;
+      const lines = [
+        "RESULT CARD · Goal 4 · MY DECK",
+        "word: " + word,
+        "I heard: " + (heard || "—"),
+        "match: " + (match === undefined ? "—" : match + "%"),
+        "best: " + (scores[word] === undefined ? "—" : scores[word] + "%"),
+        "deck: PASS on " + deckPasses + " of " + WORDS.length
+      ];
+      const blocked = saveProblem || listenProblem || problem;
+      if (blocked) lines.push("problem: " + blocked);
+      lines.push("PASS rule: " + passRule);
+      details.textContent = lines.join("\n");
+      const passed = deckPasses >= 5 && !saveProblem;
+      outcome.textContent = passed ? "→ PASS" : "→ NOT YET";
+      outcome.dataset.pass = passed;
+    }
+
+    function updateVoices() {
+      voices = (speech?.getVoices() ?? []).filter(voice =>
+        voice.lang.toLowerCase().split(/[-_]/)[0] === LANG.split("-")[0]
+      );
+      selectedVoice = voices.find(voice => voice.voiceURI === selectedVoice?.voiceURI)
+        ?? voices.find(voice => voice.lang.toLowerCase() === LANG.toLowerCase())
+        ?? voices[0];
+      voicePicker.replaceChildren(...voices.map((voice, index) => new Option(voice.name, index)));
+      if (selectedVoice) voicePicker.value = String(voices.indexOf(selectedVoice));
+      else voicePicker.add(new Option("No Japanese voices", ""));
+      voicePicker.disabled = say.disabled || !selectedVoice;
+
+      if (waitingForVoices && selectedVoice) speak();
+      else renderResult();
+    }
+
+    function setSpeechButtonsDisabled(disabled) {
+      say.disabled = disabled;
+      slow.disabled = disabled;
+      listen.disabled = disabled;
+      next.disabled = disabled;
+      voicePicker.disabled = disabled || !selectedVoice;
+    }
+
+    function finishSpeech(succeeded) {
+      problem = succeeded ? "" : "the browser couldn't say the word — click 🔊 Say it to try again";
+      utterance = undefined;
+      setSpeechButtonsDisabled(false);
+      renderResult();
+    }
+
+    function speak() {
+      clearTimeout(voiceTimer);
+      waitingForVoices = false;
+      const voice = selectedVoice;
+      if (!voice) {
+        problem = "no voice for Japanese on this computer";
+        setSpeechButtonsDisabled(false);
+        renderResult();
+        return;
+      }
+
+      utterance = new SpeechSynthesisUtterance(deck[wordIndex].word);
+      utterance.lang = LANG;
+      utterance.voice = voice;
+      utterance.rate = requestedSpeed.rate;
+      utterance.onend = () => finishSpeech(true);
+      utterance.onerror = () => finishSpeech(false);
+      renderResult();
+      try {
+        speech.speak(utterance);
+      } catch {
+        finishSpeech(false);
+      }
+    }
+
+    function startSpeech(label, rate) {
+      setSpeechButtonsDisabled(true);
+      requestedSpeed = { label, rate };
+      problem = "";
+      copyStatus.textContent = "";
+      updateVoices();
+      if (speech && speech.getVoices().length === 0) {
+        waitingForVoices = true;
+        voiceTimer = setTimeout(speak, 1500);
+      } else {
+        speak();
+      }
+    }
+
+    voicePicker.addEventListener("change", () => {
+      selectedVoice = voices[Number(voicePicker.value)];
+      problem = "";
+      copyStatus.textContent = "";
+      renderResult();
+    });
+
+    say.addEventListener("click", () => startSpeech("Normal", 1));
+    slow.addEventListener("click", () => startSpeech("Slow", 0.7));
+
+    function listeningProblem(error) {
+      switch (error) {
+        case "not-allowed":
+        case "service-not-allowed":
+          return location.protocol === "file:"
+            ? "mic blocked — refresh the page (round arrow), click 🎤, choose Allow while visiting the site"
+            : "mic blocked — click the icon left of the address, Site settings, Microphone, Allow, then reload";
+        case "audio-capture":
+          return "no microphone — plug in headphones with a mic";
+        case "no-speech":
+          return nothingHeard;
+        default:
+          return "the browser couldn't listen — click 🎤 to try again";
+      }
+    }
+
+    listen.addEventListener("click", () => {
+      heard = "";
+      match = undefined;
+      problem = "";
+      listenProblem = "";
+      copyStatus.textContent = "";
+      if (!Recognition) {
+        listenProblem = "this browser can't listen — use Chrome";
+        renderResult();
+        return;
+      }
+
+      const recognition = new Recognition();
+      recognition.lang = LANG;
+      setSpeechButtonsDisabled(true);
+      listenStatus.textContent = "Listening…";
+      const deadline = performance.now() + 10000;
+      let finished = false;
+
+      function finish(message, transcript = "") {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        heard = transcript;
+        listenProblem = message;
+        listenStatus.textContent = "";
+        setSpeechButtonsDisabled(false);
+        renderResult();
+      }
+
+      const timer = setTimeout(() => {
+        finish(nothingHeard);
+        recognition.abort();
+      }, 10000);
+
+      recognition.onresult = event => {
+        if (finished) return;
+        const alternatives = event.results[event.resultIndex];
+        const result = alternatives[0];
+        const transcript = result.transcript.trim();
+        if (transcript && performance.now() <= deadline) {
+          const { word, romaji } = deck[wordIndex];
+          match = Math.max(matchPercent(transcript, word), matchPercent(transcript, romaji));
+          scores[word] = Math.max(scores[word] ?? 0, match);
+          saveDeck();
+          finish("", transcript);
+        } else {
+          finish(nothingHeard);
+        }
+        recognition.stop();
+      };
+      recognition.onerror = event => finish(listeningProblem(event.error));
+      recognition.onend = () => finish(nothingHeard);
+
+      renderResult();
+      try {
+        recognition.start();
+      } catch (error) {
+        finish(listeningProblem(error.name === "NotAllowedError" ? "not-allowed" : ""));
+      }
+    });
+
+    document.querySelector("#copy").addEventListener("click", async () => {
+      const result = details.textContent + "\n" + outcome.textContent;
+      try {
+        await navigator.clipboard.writeText(result);
+        copyStatus.textContent = "Copied";
+      } catch {
+        const field = document.createElement("textarea");
+        field.value = result;
+        field.style.cssText = "position: fixed; opacity: 0";
+        document.body.append(field);
+        field.select();
+        let copied = false;
+        try {
+          copied = document.execCommand("copy");
+        } finally {
+          field.remove();
+          document.querySelector("#copy").focus();
+          copyStatus.textContent = copied ? "Copied" : "Select the result text to copy it.";
+        }
+      }
+    });
+
+    speech?.addEventListener("voiceschanged", updateVoices);
+    showWord();
+    updateVoices();
+  </script>
+</body>
+</html>
